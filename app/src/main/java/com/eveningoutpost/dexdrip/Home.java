@@ -36,10 +36,12 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.PowerManager;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.speech.RecognizerIntent;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 
@@ -49,7 +51,9 @@ import androidx.core.content.ContextCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
+import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.GestureDetector;
@@ -163,6 +167,8 @@ import com.google.android.material.snackbar.Snackbar;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.internal.bind.DateTypeAdapter;
+import com.mikhaellopez.circularprogressbar.CircularProgressBar;
+
 import static com.eveningoutpost.dexdrip.utils.DexCollectionType.DexcomG5;
 
 import java.io.ByteArrayOutputStream;
@@ -339,6 +345,13 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
     @Getter
     private volatile static String statusIOB = "";
     private volatile static String statusBWP = "";
+
+    private int seconds = 0;
+    private boolean isRunning = false;
+    private Handler handler;
+    private CircularProgressBar circularProgressBar;
+    private TextView timeTextView;
+    private Button resetTimerButton;
 
 
     @SuppressLint("ObsoleteSdkInt")
@@ -623,6 +636,62 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         }
 
         currentBgValueText.setText(""); // clear any design prototyping default
+
+        this.resetTimerButton = findViewById(R.id.resetButton);
+        this.circularProgressBar = findViewById(R.id.circularProgressBar);
+        this.timeTextView = findViewById(R.id.timeTextView);
+        handler = new Handler();
+
+        resetTimerButton.setOnClickListener(v -> {
+                    resetTimer();
+                    handler.removeCallbacksAndMessages(null);
+                }
+        );
+    }
+
+    private void startTimer() {
+        isRunning = true;
+        handler.post(new Runnable() {
+            @Override
+            public void run() {
+                updateUI();
+                seconds++;
+                handler.postDelayed(this, 1000);
+                resetTimerButton.setVisibility(View.VISIBLE);
+                resetTimerButton.setEnabled(true);
+            }
+        });
+    }
+
+    private void updateUI() {
+        int minutes = seconds / 60;
+        int seconds = this.seconds % 60;
+        String timeFormatted = String.format(Locale.getDefault(), "%02d:%02d", minutes, seconds);
+        timeTextView.setText(timeFormatted);
+
+        int progress = (minutes % 10) * 100 / 10;
+        circularProgressBar.setProgressWithAnimation(progress, 1000L);
+
+        if (seconds == 0 && minutes == 0) {
+            circularProgressBar.setProgressBarColor(Color.WHITE);
+            timeTextView.setTextColor(Color.WHITE);
+        } else if (minutes < 5) {
+            circularProgressBar.setProgressBarColor(Color.GREEN);
+            timeTextView.setTextColor(Color.GREEN);
+        } else if (minutes < 10) {
+            circularProgressBar.setProgressBarColor(Color.YELLOW);
+            timeTextView.setTextColor(Color.YELLOW);
+        } else {
+            circularProgressBar.setProgressBarColor(Color.RED);
+            timeTextView.setTextColor(Color.RED);
+        }
+    }
+
+    private void resetTimer() {
+        isRunning = false;
+        seconds = 0;
+        updateUI();
+        resetTimerButton.setEnabled(false);
     }
 
     private boolean firstRunDialogs(final boolean checkedeula) {
@@ -635,6 +704,7 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         }
         return true; // not sure about this
     }
+
 
     private boolean checkBatteryOptimization() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -1190,9 +1260,8 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         thiscarbsnumber = 0;
         thisInsulinSumNumber = 0;
         insulinsumset = false;
-        for (int i = 0; i < MAX_INSULIN_PROFILES; i++)
-        {
-            Log.d(TAG,"INSULINSET: "+i+" "+thisinsulinnumber.length+" "+insulinset.length);
+        for (int i = 0; i < MAX_INSULIN_PROFILES; i++) {
+            Log.d(TAG, "INSULINSET: " + i + " " + thisinsulinnumber.length + " " + insulinset.length);
             thisinsulinnumber[i] = 0;
             insulinset[i] = false;
         }
@@ -1501,7 +1570,7 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
             case "carbs":
                 if (!carbsset && (thisnumber > 0)) {
                     thiscarbsnumber = thisnumber;
-                    textCarbohydrates.setText((int)thisnumber + " g carbs");
+                    textCarbohydrates.setText((int) thisnumber + " g carbs");
                     carbsset = true;
                     Log.d(TAG, "Carbs eaten: " + thisnumber);
                     btnCarbohydrates.setVisibility(View.VISIBLE);
@@ -1892,6 +1961,10 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
                 lastDataTick = tsl();
                 updateCurrentBgInfo("new data");
                 updateHealthInfo("new_data");
+                if (!isRunning) {
+                    startTimer();
+                }
+                resetTimer();
             }
         };
 
@@ -1913,7 +1986,7 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         NFControl.initNFC(this, false);
 
         if (get_follower() || get_master()) {
-           // GcmActivity.checkSync(this);
+            // GcmActivity.checkSync(this);
         }
 
         checkWifiSleepPolicy();
@@ -1987,7 +2060,7 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         @Override
         public boolean onTouchEvent(MotionEvent ev) {
             if (ev.getAction() == MotionEvent.ACTION_MOVE) {
-                if (JoH.quietratelimit("viewport-intercept",5)) {
+                if (JoH.quietratelimit("viewport-intercept", 5)) {
                     UserError.Log.d("VIEWPORT", "Intercept gesture move event " + ev);
                 }
                 context.lastViewPortPan = tsl();
@@ -2018,7 +2091,7 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
 
         // inject our gesture handler if it hasn't already been done
         try {
-            val gestureDetector =  ChartTouchHandler.class.getDeclaredField("gestureDetector");
+            val gestureDetector = ChartTouchHandler.class.getDeclaredField("gestureDetector");
             gestureDetector.setAccessible(true);
             val chartTouchHandler = chart.getTouchHandler();
             val previewChartTouchHandler = previewChart.getTouchHandler();
@@ -2173,7 +2246,7 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
     }
 
     private static void setHasLibreblock() {
-        has_libreblock =  LibreBlock.getLatestForTrend() != null;
+        has_libreblock = LibreBlock.getLatestForTrend() != null;
         has_libreblock_set = true;
     }
 
@@ -2300,10 +2373,10 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         // always show at least the ideal number of hours
         float ideal_hours_to_show = DEFAULT_CHART_HOURS;
         // ... and rescale to accommodate predictions if not locked
-        if (! homeShelf.get("time_locked_always")) {
+        if (!homeShelf.get("time_locked_always")) {
             ideal_hours_to_show += bgGraphBuilder.getPredictivehours();
         }
-        float hours_to_show =  exactHoursSpecified ? hours : Math.max(hours, ideal_hours_to_show);
+        float hours_to_show = exactHoursSpecified ? hours : Math.max(hours, ideal_hours_to_show);
 
         UserError.Log.d(TAG, "VIEWPORT " + source + " moveviewport in setHours: asked " + hours + " vs auto " + ideal_hours_to_show + " = " + hours_to_show + " full chart width: " + bgGraphBuilder.hoursShownOnChart());
 
@@ -2608,9 +2681,9 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         if (alreadyDisplayedBgInfoCommon) return; // with bluetooth and wifi, skip second time
         alreadyDisplayedBgInfoCommon = true;
 
-        if(get_is_libre_whole_house_collector()) {
+        if (get_is_libre_whole_house_collector()) {
             Long lastReading = PersistentStore.getLong("libre-reading-timestamp");
-            if(lastReading == 0) {
+            if (lastReading == 0) {
                 notificationText.setText(R.string.in_libre_all_house_mode_no_readings_collected_yet);
             } else {
                 int minutes = (int) (tsl() - lastReading) / (60 * 1000);
@@ -2684,7 +2757,7 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
             final long warmUpMs = SensorDays.get().getWarmupMs();
             final long now = tsl();
             if (startedAt + warmUpMs > now) {
-                double waitTime = (startedAt + warmUpMs - now) / (double)MINUTE_IN_MS;
+                double waitTime = (startedAt + warmUpMs - now) / (double) MINUTE_IN_MS;
                 // TODO better resource format string
                 notificationText.setText(getString(R.string.please_wait_while_sensor_warms_up) + JoH.qs(waitTime, 0) + getString(R.string.minutes_with_bracket));
                 showUncalibratedSlope();
@@ -3652,8 +3725,8 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
 
         Snackbar.make(
 
-                activity.findViewById(android.R.id.content),
-                message, Snackbar.LENGTH_LONG)
+                        activity.findViewById(android.R.id.content),
+                        message, Snackbar.LENGTH_LONG)
                 .setAction(buttonString, mOnClickListener)
                 //.setActionTextColor(Color.RED)
                 .show();
@@ -3821,7 +3894,13 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
         }
     }
 
-  /*  class ToolbarActionItemTarget implements Target {
+    @Override
+    protected void onDestroy() {
+        isRunning = false;
+        super.onDestroy();
+    }
+
+    /*  class ToolbarActionItemTarget implements Target {
 
         private final Toolbar toolbar;
         private final int menuItemId;
